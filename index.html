@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Poker Chips Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Poker Chips Manager</h1>
+  <div id="app">
+    <div>
+      <label>Player Name: <input type="text" id="playerName" /></label>
+      <button id="createRoom">Create Room</button>
+      <input type="text" id="roomId" placeholder="Room ID">
+      <button id="joinRoom">Join Room</button>
+    </div>
+    <hr>
+    <div id="gameArea" style="display:none;">
+      <h2>Room: <span id="currentRoom"></span></h2>
+      <h3>Welcome, <span id="yourName"></span></h3>
+      <div id="players"></div>
+    </div>
+  </div>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

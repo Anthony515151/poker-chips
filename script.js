@@ -1,53 +1,55 @@
-let peer, conn;
-let connections = {};
-let isHost = false;
-let roomId = '';
-let playerName = '';
+let playerName = "";
+let stack = 0;
+let bigBlind = 20;
 
-const createRoomBtn = document.getElementById('createRoom');
-const joinRoomBtn = document.getElementById('joinRoom');
+document.getElementById("start-game").addEventListener("click", () => {
+  playerName = document.getElementById("player-name").value;
+  stack = parseInt(document.getElementById("initial-stack").value);
+  bigBlind = parseInt(document.getElementById("big-blind").value);
 
-createRoomBtn.onclick = () => {
-  playerName = document.getElementById('playerName').value;
-  isHost = true;
-  peer = new Peer();
-  peer.on('open', id => {
-    roomId = id;
-    document.getElementById('currentRoom').textContent = roomId;
-    document.getElementById('yourName').textContent = playerName;
-    document.getElementById('gameArea').style.display = 'block';
+  document.getElementById("setup").style.display = "none";
+  document.getElementById("game").style.display = "block";
+  document.getElementById("player-header").textContent = `玩家：${playerName}`;
+  updateChipInfo();
+});
+
+function updateChipInfo() {
+  document.getElementById("chip-info").textContent = `当前筹码：${stack}`;
+}
+
+document.querySelectorAll(".bet-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const multiplier = parseInt(btn.dataset.multiplier);
+    const amount = multiplier * bigBlind;
+    placeBet(amount);
   });
-  peer.on('connection', c => {
-    connections[c.peer] = c;
-    c.on('data', handleData);
-  });
-};
+});
 
-joinRoomBtn.onclick = () => {
-  playerName = document.getElementById('playerName').value;
-  roomId = document.getElementById('roomId').value;
-  peer = new Peer();
-  peer.on('open', id => {
-    conn = peer.connect(roomId);
-    conn.on('open', () => {
-      conn.send({ type: 'join', name: playerName });
-    });
-    conn.on('data', handleData);
-    document.getElementById('currentRoom').textContent = roomId;
-    document.getElementById('yourName').textContent = playerName;
-    document.getElementById('gameArea').style.display = 'block';
-  });
-};
-
-function handleData(data) {
-  if (data.type === 'players') {
-    const playersDiv = document.getElementById('players');
-    playersDiv.innerHTML = '';
-    data.players.forEach(p => {
-      const div = document.createElement('div');
-      div.className = 'player';
-      div.textContent = `${p.name}: ${p.chips} chips`;
-      playersDiv.appendChild(div);
-    });
+document.getElementById("manual-bet-btn").addEventListener("click", () => {
+  const amount = parseInt(document.getElementById("manual-bet").value);
+  if (!isNaN(amount)) {
+    placeBet(amount);
   }
+});
+
+document.getElementById("check-btn").addEventListener("click", () => {
+  alert(`${playerName} 选择了 Check`);
+});
+
+document.getElementById("fold-btn").addEventListener("click", () => {
+  alert(`${playerName} 选择了 Fold`);
+});
+
+document.getElementById("all-in").addEventListener("click", () => {
+  placeBet(stack);
+});
+
+function placeBet(amount) {
+  if (amount > stack) {
+    alert("筹码不足！");
+    return;
+  }
+  stack -= amount;
+  updateChipInfo();
+  alert(`${playerName} 下注 ${amount}`);
 }

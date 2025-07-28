@@ -1,16 +1,15 @@
 body {
-  font-family: Arial;
-  padding: 20px;
+  font-family: sans-serif;
+  padding: 1em;
+  max-width: 600px;
+  margin: auto;
+  background: linear-gradient(to right, #ffaf02, #7fe700);
 }
 
-input, button {
-  padding: 8px;
-  margin: 5px;
+input {
+  margin: 0.3em;
 }
 
-.player {
-  margin: 10px 0;
-  padding: 10px;
-  border: 1px solid #aaa;
-  border-radius: 5px;
+button {
+  margin: 0.3em;
 }

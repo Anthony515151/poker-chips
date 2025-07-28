@@ -1,27 +1,37 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Poker Chips Manager</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>德州扑克筹码管理器</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>Poker Chips Manager</h1>
-  <div id="app">
-    <div>
-      <label>Player Name: <input type="text" id="playerName" /></label>
-      <button id="createRoom">Create Room</button>
-      <input type="text" id="roomId" placeholder="Room ID">
-      <button id="joinRoom">Join Room</button>
-    </div>
-    <hr>
-    <div id="gameArea" style="display:none;">
-      <h2>Room: <span id="currentRoom"></span></h2>
-      <h3>Welcome, <span id="yourName"></span></h3>
-      <div id="players"></div>
+  <h1>德州扑克筹码管理</h1>
+
+  <div id="setup">
+    <label>玩家昵称：<input id="player-name" /></label><br />
+    <label>初始筹码：<input id="initial-stack" type="number" value="1000" /></label><br />
+    <label>大盲金额：<input id="big-blind" type="number" value="20" /></label><br />
+    <button id="start-game">开始游戏</button>
+  </div>
+
+  <div id="game" style="display:none;">
+    <h2 id="player-header"></h2>
+    <div id="chip-info"></div>
+    <div id="actions">
+      <button class="bet-btn" data-multiplier="1">1 BB</button>
+      <button class="bet-btn" data-multiplier="3">3 BB</button>
+      <button class="bet-btn" data-multiplier="5">5 BB</button>
+      <button class="bet-btn" data-multiplier="10">10 BB</button>
+      <button id="all-in">All-in</button><br />
+      <label>手动输入筹码：<input id="manual-bet" type="number" /></label>
+      <button id="manual-bet-btn">下注</button><br /><br />
+      <button id="check-btn">Check</button>
+      <button id="fold-btn">Fold</button>
     </div>
   </div>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="script.js"></script>
+
+  <script src="app.js"></script>
 </body>
 </html>

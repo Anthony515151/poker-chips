@@ -2,36 +2,73 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>德州扑克筹码管理器</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>德州扑克筹码管理工具</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+    }
+    .player-inputs input {
+      display: block;
+      margin-bottom: 10px;
+    }
+    .player-info {
+      margin-top: 20px;
+    }
+    .player-info div {
+      margin-bottom: 10px;
+    }
+    .player-boxes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .player-box {
+      border: 2px solid #ccc;
+      padding: 10px;
+      width: 200px;
+      text-align: center;
+      border-radius: 5px;
+    }
+    .player-box.active {
+      border-color: #007bff;
+      background-color: #f0f8ff;
+    }
+    .player-box.folded {
+      opacity: 0.5;
+    }
+    .player-box .actions button {
+      margin: 5px;
+    }
+    .player-box .actions button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+  </style>
 </head>
 <body>
-  <h1>德州扑克筹码管理</h1>
-
   <div id="setup">
-    <label>玩家昵称：<input id="player-name" /></label><br />
-    <label>初始筹码：<input id="initial-stack" type="number" value="1000" /></label><br />
-    <label>大盲金额：<input id="big-blind" type="number" value="20" /></label><br />
-    <button id="start-game">开始游戏</button>
-  </div>
-
-  <div id="game" style="display:none;">
-    <h2 id="player-header"></h2>
-    <div id="chip-info"></div>
-    <div id="actions">
-      <button class="bet-btn" data-multiplier="1">1 BB</button>
-      <button class="bet-btn" data-multiplier="3">3 BB</button>
-      <button class="bet-btn" data-multiplier="5">5 BB</button>
-      <button class="bet-btn" data-multiplier="10">10 BB</button>
-      <button id="all-in">All-in</button><br />
-      <label>手动输入筹码：<input id="manual-bet" type="number" /></label>
-      <button id="manual-bet-btn">下注</button><br /><br />
-      <button id="check-btn">Check</button>
-      <button id="fold-btn">Fold</button>
+    <h1>德州扑克筹码管理工具</h1>
+    <div id="player-names" class="player-inputs">
+      <label for="initial-chips">初始筹码:</label>
+      <input type="number" id="initial-chips" min="100" value="1000" />
+      <label for="big-blind">大盲注:</label>
+      <input type="number" id="big-blind" min="10" value="20" />
     </div>
+    <button id="add-player">添加玩家</button>
+    <button id="start-game" disabled>开始游戏</button>
   </div>
-
-  <script src="app.js"></script>
+  <div id="game" style="display: none;">
+    <h2>游戏中</h2>
+    <div id="game-info">
+      <p id="current-round">当前轮次: 翻牌前</p>
+      <p id="pot-amount">奖池: 0</p>
+    </div>
+    <div id="player-boxes" class="player-boxes"></div>
+    <div id="game-log"></div>
+  </div>
+  <script type="module" src="./poker-game.js"></script>
 </body>
 </html>

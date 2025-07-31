@@ -39,6 +39,7 @@ addPlayerBtn.addEventListener('click', () => {
 
   const playerChipsInput = document.createElement('input');
   playerChipsInput.type = 'number';
+  playerChipsInput.inputmode="numeric";
   playerChipsInput.placeholder = '初始筹码';
   playerChipsInput.value = initialChipsInput.value;
   playerChipsInput.classList.add('player-chips-input');

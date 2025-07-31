@@ -5,6 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>德州扑克筹码管理工具</title>
   <style>
+    /* 2. 页面背景绘制绿与深绿的棋盘格 */
+    body {
+      background-color: #004d00;
+      background-image:
+        linear-gradient(45deg, #006400 25%, transparent 25%),
+        linear-gradient(-45deg, #006400 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #006400 75%),
+        linear-gradient(-45deg, transparent 75%, #006400 75%);
+      background-size: 100px 100px; /* 可根据需要调整格子大小 */
+      background-position: 0 0, 0 50px, 50px -50px, -50px 0px;
+
+      color : white;
+    }
+    
     body {
       font-family: sans-serif;
       padding: 20px;
@@ -23,7 +37,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      margin-top: 20px;
+      margin-top: 20px; 
     }
     .player-box {
       border: 2px solid #ccc;
@@ -31,13 +45,18 @@
       width: 200px;
       text-align: center;
       border-radius: 5px;
+      background-color: #f0f8ff;
+      color:black;
     }
     .player-box.active {
       border-color: #007bff;
       background-color: #f0f8ff;
+      color:black;
     }
     .player-box.folded {
       opacity: 0.5;
+      background-color: #f0f8ff;
+      color:black;
     }
     .player-box .actions button {
       margin: 5px;
@@ -53,9 +72,9 @@
     <h1>德州扑克筹码管理工具</h1>
     <div id="player-names" class="player-inputs">
       <label for="initial-chips">初始筹码:</label>
-      <input type="number" id="initial-chips" min="100" value="1000" />
+      <input type="number" inputmode="numeric" id="initial-chips" min="100" value="1000" />
       <label for="big-blind">大盲注:</label>
-      <input type="number" id="big-blind" min="10" value="20" />
+      <input type="number" inputmode="numeric" id="big-blind" min="10" value="20" />
     </div>
     <button id="add-player">添加玩家</button>
     <button id="start-game" disabled>开始游戏</button>

@@ -21,6 +21,7 @@ let smallBlind = 10;
 let lastAggressor = null; // 记录本轮最后 raise 的玩家（索引）
 let firstToAct = null;    // 本轮首位应行动玩家
 let roundStarted = false; // 标记本轮是否已有玩家行动
+let gameOver = false;  // 游戏结束标记
 
 // 新增：为每个玩家分配 id，并添加 allIn 与 totalBet 字段
 // 初始 players 结构：
@@ -30,6 +31,7 @@ let gameStarted = false;
 
 // 添加玩家逻辑
 addPlayerBtn.addEventListener('click', () => {
+  // 创建玩家输入控件
   const playerNameInput = document.createElement('input');
   playerNameInput.type = 'text';
   playerNameInput.placeholder = `玩家 ${players.length + 1} 名字`;
@@ -41,9 +43,22 @@ addPlayerBtn.addEventListener('click', () => {
   playerChipsInput.value = initialChipsInput.value;
   playerChipsInput.classList.add('player-chips-input');
 
+  // 新增删除按钮
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = "删除";
+  deleteBtn.onclick = () => {
+    // 删除 DOM 中该玩家的输入控件
+    playerDiv.remove();
+    // 从 players 数组中删除对应项
+    players = players.filter((_, i) => i !== currentIndex);
+    // 若玩家数量不足2人，禁用开始按钮
+    startGameBtn.disabled = players.length < 2;
+  };
+
   const playerDiv = document.createElement('div');
   playerDiv.appendChild(playerNameInput);
   playerDiv.appendChild(playerChipsInput);
+  playerDiv.appendChild(deleteBtn);
   playerNameInputsContainer.appendChild(playerDiv);
 
   players.push({
@@ -243,6 +258,11 @@ function playerAction(action, index, amount = 0) {
 // ③ 修改 nextPlayer()：如果所有 active 玩家均已操作，则结束本轮（避免最后一人 check 未结束轮次）
 function nextPlayer() {
   const activePlayers = players.filter(p => !p.folded);
+  // 如果所有 active 玩家都是 allIn，则直接结束游戏
+  if (activePlayers.length && activePlayers.every(p => p.allIn)) {
+    endGame();
+    return;
+  }
   if (activePlayers.length === 1) {
     const winner = activePlayers[0];
     winner.chips += pot;
@@ -375,6 +395,8 @@ function endGame() {
       }
     }
   }
+  gameOver = true; // 标记游戏结束
+  updateGameLog("游戏结束，请点击“开始下一局”以继续。");
   showNextHandButton();
 }
 
@@ -439,7 +461,6 @@ function updatePlayerBoxes() {
     if (player.folded) playerBox.classList.add("folded");
     if (index === currentPlayerIndex) playerBox.classList.add("active");
     let allInMark = player.allIn ? " (All In)" : "";
-    // 若玩家 acted 且 bet===0，则显示 "Bet 0"
     let statusText = player.acted ? `Bet ${player.bet}` : "未轮到";
     playerBox.innerHTML = `
       <p><strong>${player.name}</strong> ${allInMark}</p>
@@ -447,10 +468,10 @@ function updatePlayerBoxes() {
       <p>状态: ${player.folded ? "Folded" : statusText}</p>
       <p>剩余筹码: ${player.chips}</p>
       <div class="actions">
-        <button onclick="playerAction('check', ${index})" ${currentPlayerIndex !== index || currentBet > 0 ? "disabled" : ""}>Check</button>
-        <button onclick="playerAction('call', ${index})" ${currentPlayerIndex !== index || currentBet === 0 ? "disabled" : ""}>Call</button>
-        <button onclick="showRaiseInput(${index})" ${currentPlayerIndex !== index ? "disabled" : ""}>Raise</button>
-        <button onclick="playerAction('fold', ${index})" ${currentPlayerIndex !== index ? "disabled" : ""}>Fold</button>
+        <button onclick="playerAction('check', ${index})" ${gameOver || currentPlayerIndex !== index || currentBet > 0 ? "disabled" : ""}>Check</button>
+        <button onclick="playerAction('call', ${index})" ${gameOver || currentPlayerIndex !== index || currentBet === 0 ? "disabled" : ""}>Call</button>
+        <button onclick="showRaiseInput(${index})" ${gameOver || currentPlayerIndex !== index ? "disabled" : ""}>Raise</button>
+        <button onclick="playerAction('fold', ${index})" ${gameOver || currentPlayerIndex !== index ? "disabled" : ""}>Fold</button>
         <div id="raise-input-${index}" class="raise-input" style="display: none;">
           <input type="number" id="raise-amount-${index}" placeholder="加注金额" step="10" />
           <button onclick="confirmRaise(${index})">确认</button>
@@ -486,6 +507,37 @@ function showNextHandButton() {
     resetHand();
   };
   gameLog.appendChild(button);
+}
+
+// 预留房间数据结构及接口
+let room = {
+  roomId: "",          // 唯一房间号（由 Firebase 分配或自行生成）
+  operator: "",        // 操作者ID（每个端登录时确定），后续可做权限验证
+  players: [],         // 本端操作创建的玩家列表
+  settings: {
+    bigBlind: 20,
+    smallBlind: 10,
+    // 更多设置……
+  },
+  gameState: {
+    currentRound: 0,
+    pot: 0,
+    currentBet: 0,
+    // 更多游戏状态……
+  }
+};
+
+// 示例接口：创建/加入房间、更新玩家（实际操作时应调用 Firebase API）
+function createRoom(operatorId) {
+  // TODO: 生成 roomId，初始化 room 数据并上传到 Firebase Realtime Database
+}
+
+function joinRoom(roomId, operatorId) {
+  // TODO: 加载房间数据，并设置当前端为观察者或操作者（可按需求做权限控制）
+}
+
+function updatePlayerInRoom(playerId, data) {
+  // TODO: 更新 Firebase 中房间的玩家数据，需检查当前操作者是否有权限修改该玩家
 }
 
 window.playerAction = playerAction;

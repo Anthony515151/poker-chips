@@ -329,8 +329,8 @@ function startRound() {
   updateGameInfo();
   updatePlayerBoxes();
   updateGameLog(`进入 ${rounds[currentRound]} 轮，奖池：${pot}`);
+  updateGameLog(`轮到 ${players[currentPlayerIndex].name} 行动`);
   updateFirebaseState();
-  nextPlayer();
 }
 
 // ----------------------

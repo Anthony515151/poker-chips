@@ -1,10 +1,37 @@
 // poker-game.js
 
+// ----------------------
+// Firebase 初始化
+// ----------------------
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.13.0/firebase-app.js";
+import {
+  getDatabase,
+  ref,
+  update,
+  onValue
+} from "https://www.gstatic.com/firebasejs/9.13.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDWngC6KUU2jRcyArjD42U7mKMwJecaqt8",
+  authDomain: "online-room-test.firebaseapp.com",
+  databaseURL: "https://online-room-test-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "online-room-test",
+  storageBucket: "online-room-test.firebasestorage.app",
+  messagingSenderId: "225690962519",
+  appId: "1:225690962519:web:f9652634f1ab627c197112"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ----------------------
+// 全局变量及 DOM 获取
+// ----------------------
 let players = [];
 let currentPlayerIndex = 0;
 let pot = 0;               // 累积奖池
-let currentBet = 0;        // 本轮最大下注（当前公共下注水平）
-let currentRound = 0;      // 轮次：0-翻牌前、1-翻牌后、2-转牌、3-河牌
+let currentBet = 0;        // 本轮最大下注
+let currentRound = 0;      // 0-翻牌前、1-翻牌后、2-转牌、3-河牌
 const rounds = ["翻牌前", "翻牌后", "转牌", "河牌"];
 
 const setupContainer = document.getElementById('setup');
@@ -14,235 +41,348 @@ const startGameBtn = document.getElementById('start-game');
 const addPlayerBtn = document.getElementById('add-player');
 const initialChipsInput = document.getElementById('initial-chips');
 const bigBlindInput = document.getElementById('big-blind');
+const roomIdInput = document.getElementById('room-id');
 
 let bigBlind = 20;
 let smallBlind = 10;
 
-let lastAggressor = null; // 记录本轮最后 raise 的玩家（索引）
-let firstToAct = null;    // 本轮首位应行动玩家
-let roundStarted = false; // 标记本轮是否已有玩家行动
-let gameOver = false;  // 游戏结束标记
-
-// 新增：为每个玩家分配 id，并添加 allIn 与 totalBet 字段
-// 初始 players 结构：
-// { id, name, chips, folded, dealer, bet, totalBet, allIn }
-
+let lastAggressor = null;
+let firstToAct = null;
+let roundStarted = false;
+let gameOver = false;
 let gameStarted = false;
 
+// ----------------------
+// 房间系统数据结构
+// ----------------------
+let room = {
+  roomId: "",          // 房间号
+  operator: "",        // 操作者 ID（暂未限制）
+  players: [],         // 本端创建的玩家
+  gameState: {
+    currentRound: 0,
+    pot: 0,
+    currentBet: 0,
+    currentPlayerIndex: 0,
+    logs: [],
+    inProgress: false  // 标识游戏是否正在进行
+  }
+};
+
+// ----------------------
+// Firebase 同步：更新房间状态（每次操作后都调用）
+// ----------------------
+function updateFirebaseState() {
+  if (!room.roomId) return;
+  update(ref(db, "rooms/" + room.roomId), {
+    gameState: {
+      currentRound,
+      pot,
+      currentBet,
+      currentPlayerIndex,
+      logs: room.gameState.logs,
+      inProgress: room.gameState.inProgress,
+      gameOver: gameOver
+    },
+    players
+  });
+}
+
+// ----------------------
+// 更新游戏操作记录，同时同步日志到 Firebase
+// ----------------------
+function updateGameLog(message) {
+  const gameLog = document.getElementById("game-log");
+  gameLog.innerHTML += `<p>${message}</p>`;
+  room.gameState.logs.push(message);
+  updateFirebaseState();
+}
+
+// ----------------------
+// Firebase 监听：同步房间数据变化
+// ----------------------
+function listenFirebaseUpdates() {
+  if (!room.roomId) return;
+  const roomRef = ref(db, "rooms/" + room.roomId);
+  onValue(roomRef, (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
+    
+    currentRound       = data.gameState.currentRound;
+    pot                = data.gameState.pot;
+    currentBet         = data.gameState.currentBet;
+    currentPlayerIndex = data.gameState.currentPlayerIndex;
+    players            = data.players || players;
+    if (data.gameState.logs) {
+      const gameLog = document.getElementById("game-log");
+      gameLog.innerHTML = data.gameState.logs.map(m => `<p>${m}</p>`).join("");
+    }
+    
+    updateGameInfo();
+    updatePlayerBoxes();
+    
+    // 同步 gameOver 状态
+    if (typeof data.gameState.gameOver !== 'undefined') {
+      gameOver = data.gameState.gameOver;
+    }
+    
+    // 如果数据库标识游戏在进行，则切换到游戏界面并设置 gameStarted
+    if (data.gameState.inProgress === true) {
+      setupContainer.style.display = 'none';
+      gameContainer.style.display = 'block';
+      gameStarted = true;
+    } else {
+      if (!gameStarted) {
+        setupContainer.style.display = 'block';
+        gameContainer.style.display = 'none';
+      }
+    }
+  });
+}
+
+// ----------------------
+// 房间系统接口（允许中途加入）
+// ----------------------
+function createRoom(operatorId) {
+  if (!room.roomId) {
+    room.roomId = "room_" + Math.floor(Math.random() * 10000);
+  }
+  updateFirebaseState();
+}
+
+function joinRoom(roomId, operatorId) {
+  room.roomId = roomId;
+  listenFirebaseUpdates();
+}
+
+// ----------------------
+// 保证房间ID输入框变化时自动加入房间（始终有效）
+// ----------------------
+roomIdInput.addEventListener('blur', () => {
+  const id = roomIdInput.value.trim();
+  if (id && !gameStarted) {
+    joinRoom(id, "operator");
+  }
+});
+roomIdInput.addEventListener('input', () => {
+  const id = roomIdInput.value.trim();
+  if (id && !gameStarted) {
+    joinRoom(id, "operator");
+  }
+});
+
+// ----------------------
 // 添加玩家逻辑
+// ----------------------
 addPlayerBtn.addEventListener('click', () => {
-  // 创建玩家输入控件
-  const playerNameInput = document.createElement('input');
-  playerNameInput.type = 'text';
-  playerNameInput.placeholder = `玩家 ${players.length + 1} 名字`;
-  playerNameInput.classList.add('player-name-input');
-
-  const playerChipsInput = document.createElement('input');
-  playerChipsInput.type = 'number';
-  playerChipsInput.inputmode="numeric";
-  playerChipsInput.placeholder = '初始筹码';
-  playerChipsInput.value = initialChipsInput.value;
-  playerChipsInput.classList.add('player-chips-input');
-
-  // 新增删除按钮
-  const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = "删除";
-  deleteBtn.onclick = () => {
-    // 删除 DOM 中该玩家的输入控件
-    playerDiv.remove();
-    // 从 players 数组中删除对应项
-    players = players.filter((_, i) => i !== currentIndex);
-    // 若玩家数量不足2人，禁用开始按钮
-    startGameBtn.disabled = players.length < 2;
-  };
-
   const playerDiv = document.createElement('div');
-  playerDiv.appendChild(playerNameInput);
-  playerDiv.appendChild(playerChipsInput);
-  playerDiv.appendChild(deleteBtn);
+  playerDiv.classList.add('player-div');
+  
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = `输入玩家 ${players.length + 1} 昵称`;
+  nameInput.classList.add('player-name-input');
+  
+  const chipsInput = document.createElement('input');
+  chipsInput.type = 'text';
+  chipsInput.inputMode = 'numeric';
+  chipsInput.placeholder = '初始筹码';
+  chipsInput.value = initialChipsInput.value;
+  chipsInput.classList.add('player-chips-input');
+  
+  const delBtn = document.createElement('button');
+  delBtn.textContent = "删除";
+  delBtn.onclick = () => {
+    playerDiv.remove();
+    players = players.filter((_, i) => i !== players.indexOf(player));
+    // 启用开始游戏按钮当玩家数量>=2时
+    startGameBtn.disabled = (players.length < 2);
+  };
+  
+  playerDiv.appendChild(nameInput);
+  playerDiv.appendChild(chipsInput);
+  playerDiv.appendChild(delBtn);
   playerNameInputsContainer.appendChild(playerDiv);
-
-  players.push({
+  
+  // 将空的玩家占位先加入players数组
+  let player = {
     id: 'player' + players.length,
-    name: '',
-    chips: parseInt(initialChipsInput.value),
+    name: "",
+    chips: parseInt(initialChipsInput.value) || 1000,
     folded: false,
     dealer: false,
     bet: 0,
     totalBet: 0,
     allIn: false
-  });
-
-  // 至少需要两个玩家才能开始游戏
-  startGameBtn.disabled = players.length < 2;
+  };
+  players.push(player);
+  startGameBtn.disabled = (players.length < 2);
 });
 
-// 修改开始游戏逻辑——仅首次初始化时设置 dealer（后续轮换由 rotateDealer 完成）
+// ----------------------
+// 开始游戏逻辑
+// ----------------------
 startGameBtn.addEventListener('click', () => {
+  const roomId = roomIdInput.value.trim();
+  if (roomId) {
+    joinRoom(roomId, "operator");
+  } else {
+    createRoom("operator");
+    roomIdInput.value = room.roomId;
+  }
+  // 游戏未开始时读取玩家信息并写入数据库
   if (!gameStarted) {
     const nameInputs = document.querySelectorAll('.player-name-input');
     const chipsInputs = document.querySelectorAll('.player-chips-input');
-
     bigBlind = parseInt(bigBlindInput.value) || 20;
     smallBlind = Math.floor(bigBlind / 2);
-
     players = Array.from(nameInputs).map((input, index) => ({
       id: 'player' + index,
-      name: input.value || `玩家 ${index + 1}`,
+      name: input.value || `玩家${index + 1}`,
       chips: parseInt(chipsInputs[index].value) || 1000,
       folded: false,
-      dealer: index === 0, // 初始仅第一次设置 dealer 为玩家0
+      dealer: index === 0,
       bet: 0,
       totalBet: 0,
       allIn: false
     }));
+    room.players = players;
     gameStarted = true;
+    room.gameState.inProgress = true;  // 标记游戏已开始
+    updateFirebaseState();
   }
   if (players.length >= 2) {
+    // 强制切换到游戏界面
     setupContainer.style.display = 'none';
     gameContainer.style.display = 'block';
     currentRound = 0;
+    gameOver = false;
     startRound();
   } else {
     alert('至少需要两个玩家开始游戏');
   }
 });
 
-// ① 在 startRound() 开始时重置每位玩家的 round 状态，并动态分配位置
+// ----------------------
+// 开局与轮次逻辑
+// ----------------------
 function startRound() {
   currentBet = 0;
   roundStarted = false;
-  // 新一局（翻牌前）清空 pot；后续轮次保留累积
-  if (currentRound === 0) { pot = 0; }
-  // 重置每位玩家本轮发的 bet 和 acted 标记（未 all-in 则重置 totalBet 供边池计算）
+  if (currentRound === 0) { 
+    pot = 0; 
+  }
   players.forEach(player => {
     player.bet = 0;
     player.acted = false;
-    if (!player.allIn) { player.totalBet = 0; }
+    if (!player.allIn) { 
+      player.totalBet = 0; 
+    }
   });
   lastAggressor = null;
-  // 动态分配位置：以 dealer 为起点构建顺时针顺序
   const dealerIndex = players.findIndex(p => p.dealer);
+  // 分配位置
   for (let j = 0; j < players.length; j++) {
-    // 顺序索引
-    const posIndex = j;
-    const realIndex = (dealerIndex + j) % players.length;
+    const idx = (dealerIndex + j) % players.length;
     if (players.length === 2) {
-      players[realIndex].position = (j === 0) ? "Dealer" : "大盲";
+      players[idx].position = (j === 0) ? "Dealer" : "大盲";
     } else {
-      if (j === 0) players[realIndex].position = "Dealer";
-      else if (j === 1) players[realIndex].position = "小盲";
-      else if (j === 2) players[realIndex].position = "大盲";
-      else players[realIndex].position = "普通玩家";
+      if (j === 0) players[idx].position = "Dealer";
+      else if (j === 1) players[idx].position = "小盲";
+      else if (j === 2) players[idx].position = "大盲";
+      else players[idx].position = "普通玩家";
+    }
+  }
+  const smallBlindIndex = (dealerIndex + 1) % players.length;
+  const bigBlindIndex = (dealerIndex + 2) % players.length;
+  
+  if (currentRound === 0) {  // Preflop
+    if (players.length === 2) {
+      // heads‑up preflop：dealer先行动
+      players[dealerIndex].chips -= smallBlind;
+      players[dealerIndex].bet = smallBlind;
+      players[(dealerIndex + 1) % 2].chips -= bigBlind;
+      players[(dealerIndex + 1) % 2].bet = bigBlind;
+      pot += (smallBlind + bigBlind);
+      currentBet = bigBlind;
+      currentPlayerIndex = dealerIndex;
+    } else {
+      // 多人（＞2）：从大盲后一位开始
+      players[smallBlindIndex].chips -= smallBlind;
+      players[smallBlindIndex].bet = smallBlind;
+      players[bigBlindIndex].chips -= bigBlind;
+      players[bigBlindIndex].bet = bigBlind;
+      pot += (smallBlind + bigBlind);
+      currentBet = bigBlind;
+      currentPlayerIndex = (bigBlindIndex + 1) % players.length;
+    }
+  } else { // Postflop
+    if (players.length === 2) {
+      // Heads‑up postflop：由大盲先行动
+      currentPlayerIndex = (dealerIndex + 1) % 2;
+    } else {
+      // 多人postflop：从庄家右侧（即小盲）开始
+      currentPlayerIndex = (dealerIndex + 1) % players.length;
     }
   }
   
-  // 计算盲注索引
-  const smallBlindIndex = (dealerIndex + 1) % players.length;
-  const bigBlindIndex = (dealerIndex + 2) % players.length;
-
-  if (currentRound === 0) {  // 翻牌前
-    if (players.length === 2) {
-      // Heads‑up：dealer为小盲（Dealer），非 dealer 为大盲
-      players[dealerIndex].chips -= smallBlind;
-      players[dealerIndex].bet = smallBlind;
-      players[dealerIndex].totalBet = smallBlind;
-      players[(dealerIndex+1)%2].chips -= bigBlind;
-      players[(dealerIndex+1)%2].bet = bigBlind;
-      players[(dealerIndex+1)%2].totalBet = bigBlind;
-      pot += smallBlind + bigBlind;
-      currentBet = bigBlind;
-      firstToAct = dealerIndex;  // heads‑up preflop，由 Dealer 先行动
-      currentPlayerIndex = (dealerIndex - 1 + 2) % 2;
-    } else {
-      // 多人局：小盲、大盲下注
-      players[smallBlindIndex].chips -= smallBlind;
-      players[smallBlindIndex].bet = smallBlind;
-      players[smallBlindIndex].totalBet = smallBlind;
-      players[bigBlindIndex].chips -= bigBlind;
-      players[bigBlindIndex].bet = bigBlind;
-      players[bigBlindIndex].totalBet = bigBlind;
-      pot += smallBlind + bigBlind;
-      currentBet = bigBlind;
-      // 翻牌前第一行动为 UTG = (bigBlindIndex + 1) % players.length
-      firstToAct = (bigBlindIndex + 1) % players.length;
-      currentPlayerIndex = (firstToAct - 1 + players.length) % players.length;
-    }
-  } else {  // 翻牌后、转牌、河牌轮
-    if (players.length === 2) {
-      const dealerIdx = players.findIndex(p => p.dealer);
-      firstToAct = (dealerIdx + 1) % 2; // heads‑up post‑flop，非 dealer先行动
-      currentPlayerIndex = (firstToAct - 1 + 2) % 2;
-    } else {
-      firstToAct = smallBlindIndex; // 多人局 post‑flop由小盲先行动
-      currentPlayerIndex = (firstToAct - 1 + players.length) % players.length;
-    }
-  }
   updateGameInfo();
   updatePlayerBoxes();
   updateGameLog(`进入 ${rounds[currentRound]} 轮，奖池：${pot}`);
+  updateFirebaseState();
   nextPlayer();
 }
 
-
-// ② 修改 playerAction()，针对 check 做调整，同时每个动作标记 acted=true
+// ----------------------
+// playerAction：处理各操作（check/call/raise/fold）
+// ----------------------
 function playerAction(action, index, amount = 0) {
-  const player = players[index];
-  if (index !== currentPlayerIndex) {
-    alert("不是当前玩家的回合！");
+  if (gameOver) {
+    alert("游戏已结束，自动进入下一局");
+    resetHand();
     return;
   }
-  // 标记玩家已作出操作
+  if (index !== currentPlayerIndex) {
+    alert("当前不是你的回合！");
+    return;
+  }
+  const player = players[index];
   player.acted = true;
   roundStarted = true;
-
   switch (action) {
     case "check":
       if (player.bet < currentBet) {
-        alert("当前有下注，不能选择 Check！");
+        alert("已有下注，不能选择 Check！");
         return;
       }
-      // check时无需扣款，直接允许
       break;
-    case "call": {
+    case "call":
       let callAmount = currentBet - player.bet;
       if (player.chips < callAmount) {
-        callAmount = player.chips;
-        player.allIn = true;
+        callAmount = player.chips; player.allIn = true;
       }
-      // 若 callAmount===0，则直接做 check（但标记 acted）
-      if (callAmount === 0) { 
-        // 如果玩家筹码正好用完，确保 allIn
-        if (player.chips === 0) { player.allIn = true; }
-        break;
+      if (callAmount > 0) {
+        player.chips -= callAmount;
+        player.bet += callAmount;
+        player.totalBet += callAmount;
+        pot += callAmount;
       }
-      player.chips -= callAmount;
-      player.bet += callAmount;
-      player.totalBet += callAmount;
-      pot += callAmount;
-      if (player.chips === 0) { player.allIn = true; }
       break;
-    }
-    case "raise": {
+    case "raise":
       let extra = parseInt(amount);
       const newTotal = player.bet + extra;
       if (isNaN(extra) || newTotal <= currentBet) {
-        alert("加注金额必须使总下注高于当前下注！");
+        alert("加注金额错误！");
         return;
       }
-      if (player.chips < extra) {
-        extra = player.chips;
-        player.allIn = true;
-      }
+      if (player.chips < extra) { extra = player.chips; player.allIn = true; }
       player.chips -= extra;
       player.bet = newTotal;
       player.totalBet += extra;
       pot += extra;
       currentBet = newTotal;
       lastAggressor = index;
-      if (player.chips === 0) { player.allIn = true; }
       break;
-    }
     case "fold":
       player.folded = true;
       break;
@@ -254,163 +394,141 @@ function playerAction(action, index, amount = 0) {
   nextPlayer();
   updateGameInfo();
   updatePlayerBoxes();
+  updateFirebaseState();
 }
 
-// ③ 修改 nextPlayer()：如果所有 active 玩家均已操作，则结束本轮（避免最后一人 check 未结束轮次）
+// ----------------------
+// nextPlayer 与轮次结束逻辑
+// ----------------------
 function nextPlayer() {
-  const activePlayers = players.filter(p => !p.folded);
-  // 如果所有 active 玩家都是 allIn，则直接结束游戏
-  if (activePlayers.length && activePlayers.every(p => p.allIn)) {
-    endGame();
-    return;
-  }
-  if (activePlayers.length === 1) {
-    const winner = activePlayers[0];
-    winner.chips += pot;
-    updateGameLog(`${winner.name} 赢得了该局，奖池：${pot}`);
+  const active = players.filter(p => !p.folded);
+  if (active.length <= 1) {
+    active[0] && (active[0].chips += pot);
+    updateGameLog(` ${active[0] ? active[0].name : "无人"} 赢得奖池 ${pot}`);
     showNextHandButton();
+    updateFirebaseState();
     return;
   }
-  
-  // 当所有 active 玩家已经 acted 且投注平齐时（若河牌，则进入 showdown）
-  if (roundStarted && allActivePlayersCalled()) {
-    if (currentRound === 3) {
-      endGame(); // 河牌进入 showdown，让用户指定赢家
-    } else {
-      endRound();
-    }
+  if (roundStarted && active.every(p => p.allIn || (p.acted && p.bet === currentBet))) {
+    if (currentRound === 3) endGame(); else endRound();
     return;
   }
-  
   do {
     currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
   } while (players[currentPlayerIndex].folded || players[currentPlayerIndex].allIn);
-  
-  // 如果存在 raise 且轮回到 raise 玩家则结束本轮
-  if (lastAggressor !== null && currentPlayerIndex === lastAggressor) {
-    if (currentRound === 3) {
-      endGame();
-    } else {
-      endRound();
-    }
-    return;
-  }
-  
-  updateGameLog(`轮到 ${players[currentPlayerIndex].name} 操作`);
+  updateGameLog(`轮到 ${players[currentPlayerIndex].name} 行动`);
   updatePlayerBoxes();
+  updateFirebaseState();
 }
 
 function endRound() {
-  if (currentRound < 3) {
-    currentRound++;
-    startRound();
-  } else {
-    endGame();
-  }
+  if (currentRound < 3) { currentRound++; startRound(); }
+  else { endGame(); }
 }
 
-// 修改后的 endGame()：在无人 all-in 且投注平齐情况下，只处理单份奖池
 function endGame() {
-  const activePlayers = players.filter(p => !p.folded);
-  const bets = activePlayers.map(p => p.totalBet);
+  const active = players.filter(p => !p.folded);
+  const bets = active.map(p => p.totalBet);
   const allEqual = bets.every(b => b === bets[0]);
-  const anyAllIn = activePlayers.some(p => p.allIn);
+  const anyAllIn = active.some(p => p.allIn);
+  let report = "";
   
-  // 如果无人 allIn 且所有 active 玩家投入金额一致，则视为单一奖池情况，
-  // 在这种情况下整个 pot 都归于指定赢家（showdown）
   if (!anyAllIn && allEqual) {
     let winnerNames = prompt(`请指定赢家（多个以空格分隔），此赢家将获得整个奖池 ${pot} 筹码：`);
     let winners;
-    if (winnerNames === null || winnerNames.trim() === "") {
-      winners = activePlayers;
+    if (!winnerNames || winnerNames.trim() === "") {
+      winners = active;
       alert("未输入赢家，采用所有活跃玩家平分奖池");
     } else {
       winnerNames = winnerNames.trim().split(/\s+/);
-      winners = activePlayers.filter(p => winnerNames.includes(p.name));
-      if (winners.length === 0) {
-        winners = activePlayers;
-        alert("未识别赢家，采用所有活跃玩家平分奖池");
+      winners = active.filter(p => winnerNames.includes(p.name));
+      while (winners.length === 0) {
+        winnerNames = prompt(`未匹配到合法赢家，请重新输入赢家名称（多个以空格分隔），点击取消则自动平分：`);
+        if (winnerNames === null) {
+          winners = active;
+          break;
+        }
+        winnerNames = winnerNames.trim().split(/\s+/);
+        winners = active.filter(p => winnerNames.includes(p.name));
       }
     }
     let split = Math.floor(pot / winners.length);
     winners.forEach(w => {
       w.chips += split;
-      updateGameLog(`${w.name} 赢得了 ${split} 筹码（整池）`);
+      report += `${w.name} 获得 ${split} 筹码（整池）\n`;
     });
-    showNextHandButton();
-    return;
-  }
-  
-  // 否则执行原有 side pot 逻辑（适用于存在 all-in 或投注不均的情况）
-  let sortedBets = players.filter(p => p.totalBet > 0).slice().sort((a, b) => a.totalBet - b.totalBet);
-  let pots = [];
-  let previousLevel = 0;
-  while (sortedBets.length > 0) {
-    let currentLevel = sortedBets[0].totalBet;
-    let betThisLevel = currentLevel - previousLevel;
-    let participants = sortedBets.map(p => p.id);
-    let amount = betThisLevel * participants.length;
-    pots.push({ amount, eligiblePlayers: participants });
-    sortedBets.forEach(p => { p.totalBet -= betThisLevel; });
-    sortedBets = sortedBets.filter(p => p.totalBet > 0);
-    previousLevel = currentLevel;
-  }
-  
-  for (const potObj of pots) {
-    let contenders = potObj.eligiblePlayers.filter(id => {
-      let p = players.find(x => x.id === id);
-      return !p.folded;
-    });
-    if (contenders.length === 1) {
-      let winner = players.find(x => x.id === contenders[0]);
-      winner.chips += potObj.amount;
-      updateGameLog(`${winner.name} 赢得了侧池 ${potObj.amount} 筹码`);
-    } else {
-      let winnerNames;
-      while (true) {
-        winnerNames = prompt(`多个玩家争夺侧池 ${potObj.amount} 筹码，请输入赢家的名字（多个以空格分隔）：`);
-        if (winnerNames === null) {
-          alert("未输入赢家，采用所有未弃牌玩家平分此侧池。");
-          let split = Math.floor(potObj.amount / contenders.length);
-          contenders.forEach(id => {
-            let p = players.find(x => x.id === id);
-            p.chips += split;
-            updateGameLog(`${p.name} 分得 ${split} 筹码`);
-          });
-          break;
-        }
-        winnerNames = winnerNames.trim();
-        if (!winnerNames) continue;
-        const names = winnerNames.split(/\s+/);
-        let winners = players.filter(p => names.includes(p.name));
-        if (winners.length > 0) {
-          let split = Math.floor(potObj.amount / winners.length);
-          winners.forEach(w => {
-            w.chips += split;
-            updateGameLog(`${w.name} 赢得了 ${split} 筹码`);
-          });
-          break;
-        } else {
-          alert("未找到合法赢家，请重新输入！");
+  } else {
+    // 计算边池
+    let sortedBets = active.slice().sort((a, b) => a.totalBet - b.totalBet);
+    let prevLevel = 0;
+    let pots = [];
+    while (sortedBets.length > 0) {
+      let currentLevel = sortedBets[0].totalBet;
+      let potAmount = (currentLevel - prevLevel) * sortedBets.length;
+      pots.push({ amount: potAmount, participants: sortedBets.map(p => p.id) });
+      prevLevel = currentLevel;
+      sortedBets = sortedBets.filter(p => p.totalBet > currentLevel);
+    }
+    for (let potObj of pots) {
+      let contenders = potObj.participants.filter(id => {
+        let p = players.find(x => x.id === id);
+        return !p.folded;
+      });
+      if (contenders.length === 1) {
+        let winner = players.find(x => x.id === contenders[0]);
+        winner.chips += potObj.amount;
+        report += `${winner.name} 赢得侧池 ${potObj.amount} 筹码\n`;
+      } else {
+        let valid = false;
+        while (!valid) {
+          let winnerNames = prompt(`多个玩家争夺侧池 ${potObj.amount} 筹码，请输入赢家的名字（多个以空格分隔），点击取消则自动平分：`);
+          if (winnerNames === null) {
+            alert("已取消输入，采用所有未弃牌玩家平分此侧池");
+            let split = Math.floor(potObj.amount / contenders.length);
+            contenders.forEach(id => {
+              let p = players.find(x => x.id === id);
+              p.chips += split;
+              report += `${p.name} 分得 ${split} 筹码\n`;
+            });
+            valid = true;
+          } else {
+            winnerNames = winnerNames.trim();
+            if (!winnerNames) continue;
+            const names = winnerNames.split(/\s+/);
+            let winners2 = players.filter(p => names.includes(p.name) && !p.folded);
+            if (winners2.length > 0) {
+              let split = Math.floor(potObj.amount / winners2.length);
+              winners2.forEach(w => {
+                w.chips += split;
+                report += `${w.name} 赢得 ${split} 筹码\n`;
+              });
+              valid = true;
+            } else {
+              alert("未找到合法赢家，请重新输入！");
+            }
+          }
         }
       }
     }
   }
-  gameOver = true; // 标记游戏结束
-  updateGameLog("游戏结束，请点击“开始下一局”以继续。");
+  updateGameLog(`游戏结束，筹码分配：\n${report}`);
+  alert(`游戏结束！\n筹码分配结果：\n${report}\n进入下一局`);
+  gameOver = true;
+  updateFirebaseState();
   showNextHandButton();
+  // 注意：不自动调用 resetHand()，由“开始下一局”按钮统一重置
 }
 
-function resetGame() {
-  currentRound = 0;
-  players.forEach(player => {
-    player.bet = 0;
-    player.folded = false;
-    player.allIn = false;
-    player.acted = false;
+// ----------------------
+// 手动同步按钮
+// ----------------------
+const manualSyncBtn = document.getElementById("manual-sync");
+if(manualSyncBtn){
+  manualSyncBtn.addEventListener("click", ()=>{
+    const id = roomIdInput.value.trim();
+    if(id){ joinRoom(id, "operator"); alert("已同步最新数据"); }
+    else { alert("请输入房间ID"); }
   });
-  document.getElementById("game-log").innerHTML = "";
-  showNextHandButton();
 }
 
 function resetHand() {
@@ -418,129 +536,93 @@ function resetHand() {
   players.forEach(player => {
     player.bet = 0;
     player.folded = false;
-    // 重置除 allIn 外的状态；是否重置 allIn 可根据需求决定
     player.acted = false;
   });
   rotateDealer();
   document.getElementById("game-log").innerHTML = "";
+  gameOver = false;
+  room.gameState.inProgress = true;
+  updateFirebaseState();
   startRound();
 }
 
 function rotateDealer() {
-  const currentDealerIndex = players.findIndex(player => player.dealer);
-  players[currentDealerIndex].dealer = false;
-  const nextDealerIndex = (currentDealerIndex + 1) % players.length;
-  players[nextDealerIndex].dealer = true;
-}
-
-// 检查所有未fold玩家是否已投入相等筹码
-function allActivePlayersCalled() {
-  const active = players.filter(p => !p.folded);
-  // 如果玩家已 allIn，则不要求其 bet 等于 currentBet
-  return active.every(p => p.allIn || (p.acted && p.bet === currentBet));
-}
-
-function updateGameLog(message) {
-  const gameLog = document.getElementById("game-log");
-  gameLog.innerHTML += `<p>${message}</p>`;
+  const idx = players.findIndex(p => p.dealer);
+  players[idx].dealer = false;
+  const nextIdx = (idx + 1) % players.length;
+  players[nextIdx].dealer = true;
+  updateFirebaseState();
 }
 
 function updateGameInfo() {
-  const currentRoundElement = document.getElementById("current-round");
-  const potElement = document.getElementById("pot-amount");
-  currentRoundElement.textContent = `当前轮次: ${rounds[currentRound]}`;
-  potElement.textContent = `奖池: ${pot}`;
+  const roundEl = document.getElementById("current-round");
+  const potEl = document.getElementById("pot-amount");
+  roundEl.textContent = `当前轮次: ${rounds[currentRound]}`;
+  potEl.textContent = `奖池: ${pot}`;
 }
 
-// ⑥ 修改 updatePlayerBoxes()，使用 player.position 动态显示位置信息
+// ----------------------
+// updatePlayerBoxes：根据 player.position 显示信息，并结合 gameOver 状态禁用操作
+// ----------------------
 function updatePlayerBoxes() {
-  const playerBoxesContainer = document.getElementById("player-boxes");
-  playerBoxesContainer.innerHTML = "";
-  players.forEach((player, index) => {
-    const playerBox = document.createElement("div");
-    playerBox.classList.add("player-box");
-    if (player.folded) playerBox.classList.add("folded");
-    if (index === currentPlayerIndex) playerBox.classList.add("active");
-    let allInMark = player.allIn ? " (All In)" : "";
-    let statusText = player.acted ? `Bet ${player.bet}` : "未轮到";
-    playerBox.innerHTML = `
-      <p><strong>${player.name}</strong> ${allInMark}</p>
-      <p>位置: ${player.position}</p>
-      <p>状态: ${player.folded ? "Folded" : statusText}</p>
-      <p>剩余筹码: ${player.chips}</p>
+  const boxes = document.getElementById("player-boxes");
+  boxes.innerHTML = "";
+  players.forEach((p, i) => {
+    const box = document.createElement("div");
+    box.classList.add("player-box");
+    if (p.folded) box.classList.add("folded");
+    if (i === currentPlayerIndex) box.classList.add("active");
+    const allInMark = p.allIn ? " (All In)" : "";
+    const status = p.acted ? `Bet ${p.bet}` : "未轮到";
+    box.innerHTML = `
+      <p><strong>${p.name}</strong>${allInMark}</p>
+      <p>位置: ${p.position || "-"}</p>
+      <p>状态: ${p.folded ? "Folded" : status}</p>
+      <p>剩余筹码: ${p.chips}</p>
       <div class="actions">
-        <button onclick="playerAction('check', ${index})" ${gameOver || currentPlayerIndex !== index || currentBet > 0 ? "disabled" : ""}>Check</button>
-        <button onclick="playerAction('call', ${index})" ${gameOver || currentPlayerIndex !== index || currentBet === 0 ? "disabled" : ""}>Call</button>
-        <button onclick="showRaiseInput(${index})" ${gameOver || currentPlayerIndex !== index ? "disabled" : ""}>Raise</button>
-        <button onclick="playerAction('fold', ${index})" ${gameOver || currentPlayerIndex !== index ? "disabled" : ""}>Fold</button>
-        <div id="raise-input-${index}" class="raise-input" style="display: none;">
-          <input type="number" id="raise-amount-${index}" placeholder="加注金额" step="10" />
-          <button onclick="confirmRaise(${index})">确认</button>
+        <button onclick="playerAction('check', ${i})" ${gameOver || currentPlayerIndex!==i || currentBet>0 ? "disabled" : ""}>Check</button>
+        <button onclick="playerAction('call', ${i})" ${gameOver || currentPlayerIndex!==i || currentBet===0 ? "disabled" : ""}>Call</button>
+        <button onclick="showRaiseInput(${i})" ${gameOver || currentPlayerIndex!==i ? "disabled" : ""}>Raise</button>
+        <button onclick="playerAction('fold', ${i})" ${gameOver || currentPlayerIndex!==i ? "disabled" : ""}>Fold</button>
+        <div id="raise-input-${i}" class="raise-input" style="display:none;">
+          <input type="number" id="raise-amount-${i}" placeholder="加注金额" step="10" />
+          <button onclick="confirmRaise(${i})">确认</button>
         </div>
       </div>
     `;
-    playerBoxesContainer.appendChild(playerBox);
+    boxes.appendChild(box);
   });
 }
 
-function showRaiseInput(index) {
-  const raiseInputDiv = document.getElementById(`raise-input-${index}`);
-  raiseInputDiv.style.display = "block";
+function showRaiseInput(i) {
+  document.getElementById(`raise-input-${i}`).style.display = "block";
 }
 
-function confirmRaise(index) {
-  const raiseAmountInput = document.getElementById(`raise-amount-${index}`);
-  const raiseAmount = parseInt(raiseAmountInput.value);
-  if (isNaN(raiseAmount) || raiseAmount <= 0) {
+function confirmRaise(i) {
+  const input = document.getElementById(`raise-amount-${i}`);
+  const amount = parseInt(input.value);
+  if(isNaN(amount)|| amount<=0){
     alert("请输入有效的加注金额！");
     return;
   }
-  playerAction("raise", index, raiseAmount);
-  document.getElementById(`raise-input-${index}`).style.display = "none";
+  playerAction("raise", i, amount);
+  document.getElementById(`raise-input-${i}`).style.display = "none";
 }
 
 function showNextHandButton() {
   const gameLog = document.getElementById("game-log");
-  const button = document.createElement("button");
-  button.textContent = "开始下一局";
-  button.onclick = () => {
-    gameLog.innerHTML = ""; // 清空日志信息
+  const btn = document.createElement("button");
+  btn.textContent = "开始下一局";
+  btn.onclick = () => {
+    gameLog.innerHTML = "";
     resetHand();
   };
-  gameLog.appendChild(button);
+  gameLog.appendChild(btn);
+  updateFirebaseState();
 }
 
-// 预留房间数据结构及接口
-let room = {
-  roomId: "",          // 唯一房间号（由 Firebase 分配或自行生成）
-  operator: "",        // 操作者ID（每个端登录时确定），后续可做权限验证
-  players: [],         // 本端操作创建的玩家列表
-  settings: {
-    bigBlind: 20,
-    smallBlind: 10,
-    // 更多设置……
-  },
-  gameState: {
-    currentRound: 0,
-    pot: 0,
-    currentBet: 0,
-    // 更多游戏状态……
-  }
-};
-
-// 示例接口：创建/加入房间、更新玩家（实际操作时应调用 Firebase API）
-function createRoom(operatorId) {
-  // TODO: 生成 roomId，初始化 room 数据并上传到 Firebase Realtime Database
-}
-
-function joinRoom(roomId, operatorId) {
-  // TODO: 加载房间数据，并设置当前端为观察者或操作者（可按需求做权限控制）
-}
-
-function updatePlayerInRoom(playerId, data) {
-  // TODO: 更新 Firebase 中房间的玩家数据，需检查当前操作者是否有权限修改该玩家
-}
-
+// 将函数导出到全局作用域
 window.playerAction = playerAction;
 window.showRaiseInput = showRaiseInput;
 window.confirmRaise = confirmRaise;
+// End of file
